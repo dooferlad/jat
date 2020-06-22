@@ -16,12 +16,13 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/dooferlad/jat/shell"
 
 	"github.com/spf13/cobra"
 )
 
 func Reboot() error {
-	if err := Sudo("reboot"); err != nil {
+	if err := shell.Sudo("reboot"); err != nil {
 		return fmt.Errorf("rebooting: %s", err)
 	}
 

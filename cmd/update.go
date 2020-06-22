@@ -16,39 +16,21 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
-
+	"github.com/dooferlad/jat/dpkg"
+	"github.com/dooferlad/jat/shell"
 	"github.com/spf13/cobra"
 )
 
-func Shell(cmd string, arg ...string) error {
-	exe := exec.Command(cmd, arg...)
-	exe.Env = os.Environ()
-	exe.Stderr = os.Stderr
-	exe.Stdout = os.Stdout
-	exe.Stdin = os.Stdin
-
-	if err := exe.Run(); err != nil {
+func Upgrade() error {
+	if err := dpkg.Update(); err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func Sudo(cmd string, arg ...string) error {
-	c := []string{cmd}
-	c = append(c, arg...)
-
-	return Shell("sudo", c...)
-}
-
-func Upgrade() error {
-	if err := Sudo("apt", "update"); err != nil {
+	if err := shell.Sudo("apt", "update"); err != nil {
 		return fmt.Errorf("updating packages: %s", err)
 	}
 
-	if err := Sudo("apt", "upgrade", "-y", "--autoremove"); err != nil {
+	if err := shell.Sudo("apt", "upgrade", "-y", "--autoremove"); err != nil {
 		return fmt.Errorf("updating packages: %s", err)
 	}
 

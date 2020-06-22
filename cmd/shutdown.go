@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/dooferlad/jat/shell"
 
 	"github.com/spf13/cobra"
 )
@@ -35,11 +36,11 @@ func Shutdown() error {
 		return err
 	}
 
-	if err := Sudo("fstrim", "--all"); err != nil {
+	if err := shell.Sudo("fstrim", "--all"); err != nil {
 		return fmt.Errorf("trimming file systems: %s", err)
 	}
 
-	if err := Sudo("halt", "-p"); err != nil {
+	if err := shell.Sudo("halt", "-p"); err != nil {
 		return fmt.Errorf("updating packages: %s", err)
 	}
 
