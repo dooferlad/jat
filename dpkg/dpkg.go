@@ -2,10 +2,6 @@ package dpkg
 
 import (
 	"fmt"
-	"github.com/andybalholm/cascadia"
-	"github.com/dooferlad/jat/shell"
-	"github.com/spf13/viper"
-	"golang.org/x/net/html"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -14,6 +10,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/andybalholm/cascadia"
+	"github.com/dooferlad/jat/shell"
+	"github.com/spf13/viper"
+	"golang.org/x/net/html"
 )
 
 func Update() error {
@@ -28,7 +29,7 @@ func Update() error {
 }
 
 func checkAndUpdatePackage(name string, info interface{}) error {
-	var url, packageName, prefix, selector, regexstring, downloadURL string
+	var url, packageName, selector, regexstring, downloadURL string
 	infoMap := info.(map[string]interface{})
 	for k, v := range infoMap {
 		switch k {
@@ -36,8 +37,6 @@ func checkAndUpdatePackage(name string, info interface{}) error {
 			url = v.(string)
 		case "name":
 			packageName = v.(string)
-		case "prefix":
-			prefix = v.(string)
 		case "selector":
 			selector = v.(string)
 		case "regexp":
@@ -49,7 +48,7 @@ func checkAndUpdatePackage(name string, info interface{}) error {
 		}
 	}
 
-	if url == "" || packageName == "" || prefix == "" && selector == "" {
+	if url == "" || packageName == "" || selector == "" && regexstring == "" {
 		fmt.Println("Error: Incomplete configuration for ", name)
 	}
 
@@ -76,35 +75,7 @@ func checkAndUpdatePackage(name string, info interface{}) error {
 	}
 	defer resp.Body.Close()
 
-	if prefix != "" {
-		bb, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		body := string(bb)
-
-		var pkgURL []byte
-		i := strings.Index(body, prefix)
-		if i == -1 {
-			fmt.Printf("ERROR: Can't find %s on %s\n", prefix, url)
-			return nil
-		}
-		for ; body[i] != '"'; i++ {
-			pkgURL = append(pkgURL, body[i])
-		}
-
-		if strings.Contains(string(pkgURL), version) {
-			fmt.Printf("%s is up to date (%s)\n", name, version)
-			return nil
-		} else {
-			fmt.Printf("%s needs updating: %s\n", name, pkgURL)
-		}
-
-		if downloadURL == "" {
-			downloadURL = string(pkgURL)
-		}
-
-	} else if selector != "" {
+	if selector != "" {
 		doc, err := html.Parse(resp.Body)
 		if err != nil {
 			return err
@@ -123,10 +94,50 @@ func checkAndUpdatePackage(name string, info interface{}) error {
 			return err
 		}
 		matches := re.FindSubmatch([]byte(node.FirstChild.Data))
-		if string(matches[1]) != version {
+		if !versionMatch(string(matches[1]), version) {
 			fmt.Printf("%s needs updating: %s\n", name, downloadURL)
 		} else {
 			fmt.Printf("%s is up to date (%s)\n", name, version)
+			return nil
+		}
+	} else if regexstring != "" {
+		doc, err := html.Parse(resp.Body)
+		if err != nil {
+			return err
+		}
+
+		re, err := regexp.Compile(regexstring)
+		if err != nil {
+			return err
+		}
+
+		var f func(*html.Node)
+		f = func(n *html.Node) {
+			if n.Type == html.ElementNode && n.Data == "a" {
+				for _, a := range n.Attr {
+					if a.Key == "href" {
+						matches := re.FindSubmatch([]byte(a.Val))
+						if len(matches) > 0 && len(matches[1]) > 0 {
+							if !versionMatch(string(matches[1]), version) {
+								downloadURL = a.Val
+								fmt.Printf("%s needs updating: %s\n", name, downloadURL)
+							} else {
+								fmt.Printf("%s is up to date (%s)\n", name, version)
+
+							}
+							return
+						}
+						break
+					}
+				}
+			}
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				f(c)
+			}
+		}
+		f(doc)
+
+		if downloadURL == "" {
 			return nil
 		}
 	}
@@ -158,4 +169,23 @@ func checkAndUpdatePackage(name string, info interface{}) error {
 	shell.Sudo("dpkg", "-i", fileName)
 
 	return nil
+}
+
+func versionMatch(remote, local string) bool {
+	dashIndex := strings.Index(local, "-")
+	if dashIndex >= 0 {
+		local = local[:dashIndex]
+	}
+
+	r := strings.Split(remote, ".")
+
+	if len(r) < 3 {
+		for len(r) < 3 {
+			r = append(r, "0")
+		}
+	} else if len(r) > 3 {
+		r = r[:3]
+	}
+
+	return strings.Join(r, ".") == local
 }
