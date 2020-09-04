@@ -41,11 +41,15 @@ manual_packages:
     url: https://mullvad.net/en/download/
     name: mullvad-vpn
     regexp: https://github.com/mullvad/mullvadvpn-app/releases/download/(.*)/.*.deb
-    remote_point_version: 0
   bluejeans:
     url: https://www.bluejeans.com/downloads
     regexp: https://swdl.bluejeans.com/desktop-app/linux/(.*)/BlueJeans.deb
     name: bluejeans-v2
+  rclone:
+    url: https://rclone.org/downloads/
+    regexp: https://downloads.rclone.org/v(.*)/rclone-v.*-linux-amd64.deb
+    download: https://downloads.rclone.org/rclone-current-linux-amd64.deb
+    name: rclone
 ```
 
 For a manual package download you need to specify:

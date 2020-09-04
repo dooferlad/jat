@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/dooferlad/jat/shell"
 
 	"github.com/spf13/cobra"
@@ -47,5 +48,5 @@ var rebootCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(rebootCmd)
+	rootCmd.AddCommand(rebootCmd)
 }

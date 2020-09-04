@@ -123,7 +123,7 @@ func checkAndUpdatePackage(name string, info interface{}) error {
 								fmt.Printf("%s needs updating: %s\n", name, downloadURL)
 							} else {
 								fmt.Printf("%s is up to date (%s)\n", name, version)
-
+								downloadURL = ""
 							}
 							return
 						}
@@ -178,14 +178,17 @@ func versionMatch(remote, local string) bool {
 	}
 
 	r := strings.Split(remote, ".")
+	l := strings.Split(local, ".")
 
-	if len(r) < 3 {
-		for len(r) < 3 {
-			r = append(r, "0")
+	for i, v := range r {
+		if i >= len(l) {
+			break
 		}
-	} else if len(r) > 3 {
-		r = r[:3]
+
+		if v != l[i] {
+			return false
+		}
 	}
 
-	return strings.Join(r, ".") == local
+	return true
 }

@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/dooferlad/jat/shell"
 
 	"github.com/spf13/cobra"
@@ -48,5 +49,5 @@ func Shutdown() error {
 }
 
 func init() {
-	RootCmd.AddCommand(shutdownCmd)
+	rootCmd.AddCommand(shutdownCmd)
 }

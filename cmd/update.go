@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/dooferlad/jat/dpkg"
 	"github.com/dooferlad/jat/shell"
 	"github.com/spf13/cobra"
@@ -47,5 +48,5 @@ var updateCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(updateCmd)
 }
