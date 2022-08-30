@@ -33,11 +33,11 @@ var shutdownCmd = &cobra.Command{
 
 // Shutdown updates the machine, tidies up, and shuts down
 func Shutdown() error {
-	if err := Upgrade(); err != nil {
+	if err := Upgrade([]string{}); err != nil {
 		return err
 	}
 
-	if err := shell.Sudo("fstrim", "--all"); err != nil {
+	if err := shell.Sudo("fstrim", "--all", "--verbose"); err != nil {
 		return fmt.Errorf("trimming file systems: %s", err)
 	}
 

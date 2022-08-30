@@ -17,14 +17,23 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/dooferlad/jat/blob"
 	"github.com/dooferlad/jat/dpkg"
 	"github.com/dooferlad/jat/shell"
 	"github.com/spf13/cobra"
 )
 
-func Upgrade() error {
-	if err := dpkg.Update(); err != nil {
+func Upgrade(args []string) error {
+	if err := blob.Update(args); err != nil {
 		return err
+	}
+
+	if err := dpkg.Update(args); err != nil {
+		return err
+	}
+
+	if len(args) > 0 {
+		return nil
 	}
 
 	if err := shell.Sudo("apt", "update"); err != nil {
@@ -43,7 +52,7 @@ var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Update software on this machine",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return Upgrade()
+		return Upgrade(args)
 	},
 }
 

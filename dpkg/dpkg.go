@@ -1,35 +1,64 @@
 package dpkg
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
+	"sync"
 
-	"github.com/andybalholm/cascadia"
+	"github.com/dooferlad/jat/utils"
+
 	"github.com/dooferlad/jat/shell"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"golang.org/x/net/html"
 )
 
-func Update() error {
+func Update(args []string) error {
+	dir, err := ioutil.TempDir("", "jat-dpkg-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+
 	manualPackages := viper.GetStringMap("manual_packages")
+
+	wg := sync.WaitGroup{}
+
 	for name, info := range manualPackages {
-		if err := checkAndUpdatePackage(name, info); err != nil {
-			return err
+		if len(args) == 0 || utils.InList(name, args) {
+			wg.Add(1)
+			go func(dir, name string, info interface{}) {
+				if err := checkAndUpdatePackage(dir, name, info); err != nil {
+					logrus.Errorf("while downloading %s: %s", name, err)
+				}
+				wg.Done()
+			}(dir, name, info)
 		}
+	}
+
+	wg.Wait()
+
+	match := filepath.Join(dir, "*.deb")
+	if matches, err := filepath.Glob(match); err == nil && matches != nil {
+		shell.Sudo("dpkg", append([]string{"-i"}, matches...)...)
+
+		// TODO: record the just installed version against the version we thought
+		// that we downloaded so packages where the URL doesn't map to the version
+		// can be tracked. So far this will still need to use something unique
+		// from the URL, but realistically a checksum (published, etag) could work.
 	}
 
 	return nil
 }
 
-func checkAndUpdatePackage(name string, info interface{}) error {
-	var url, packageName, selector, regexstring, downloadURL string
+func checkAndUpdatePackage(dir, name string, info interface{}) error {
+	logrus.Infof("checkAndUpdate a deb %s", name)
+	var url, packageName, selector, regexstring, fixedDownloadURL, githubRepo string
 	infoMap := info.(map[string]interface{})
 	for k, v := range infoMap {
 		switch k {
@@ -42,153 +71,126 @@ func checkAndUpdatePackage(name string, info interface{}) error {
 		case "regexp":
 			regexstring = v.(string)
 		case "download":
-			downloadURL = v.(string)
+			fixedDownloadURL = v.(string)
+		case "github":
+			githubRepo = v.(string)
 		default:
 			continue
 		}
 	}
 
-	if url == "" || packageName == "" || selector == "" && regexstring == "" {
-		fmt.Println("Error: Incomplete configuration for ", name)
+	if packageName == "" {
+		packageName = name
 	}
 
-	exe := exec.Command("/usr/bin/dpkg-query", "--showformat='${Version}'", "--show", packageName)
-	out, err := exe.CombinedOutput()
+	dpkgStatus, err := Query(packageName)
+	if dpkgStatus.Status != "install ok installed" {
+		logrus.Infof("Not installed: %s, %v", name, dpkgStatus)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 
-	var version string
-	version = string(out[1 : len(out)-1])
-
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return err
+	if githubRepo == "" {
+		if url == "" || packageName == "" || selector == "" && regexstring == "" {
+			fmt.Println("Error: Incomplete configuration for", name)
+		}
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64)")
+	var downloadURL string
+	var sigURL string
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+	if githubRepo != "" {
+		client, err := utils.GithubClient()
+		if err != nil {
+			return err
+		}
+		bits := strings.Split(githubRepo, "/")
 
-	if selector != "" {
-		doc, err := html.Parse(resp.Body)
+		release, _, err := client.Repositories.GetLatestRelease(context.Background(), bits[0], bits[1])
 		if err != nil {
 			return err
 		}
 
-		s, err := cascadia.Compile(selector)
-		if err != nil {
-			return err
-		}
+		if release.TagName != nil {
+			if !utils.VersionMatch(*release.TagName, dpkgStatus.Version) {
+				fmt.Printf("%s needs updating: %s (local: %s, remote: %s)\n", name, downloadURL, dpkgStatus.Version, *release.TagName)
+				for _, a := range release.Assets {
+					if a.Name != nil {
+						fileName := *a.Name
 
-		node := s.MatchFirst(doc)
-		fmt.Println(node.FirstChild.Data)
-
-		re, err := regexp.Compile(regexstring)
-		if err != nil {
-			return err
-		}
-		matches := re.FindSubmatch([]byte(node.FirstChild.Data))
-		if !versionMatch(string(matches[1]), version) {
-			fmt.Printf("%s needs updating: %s\n", name, downloadURL)
-		} else {
-			fmt.Printf("%s is up to date (%s)\n", name, version)
-			return nil
-		}
-	} else if regexstring != "" {
-		doc, err := html.Parse(resp.Body)
-		if err != nil {
-			return err
-		}
-
-		re, err := regexp.Compile(regexstring)
-		if err != nil {
-			return err
-		}
-
-		var f func(*html.Node)
-		f = func(n *html.Node) {
-			if n.Type == html.ElementNode && n.Data == "a" {
-				for _, a := range n.Attr {
-					if a.Key == "href" {
-						matches := re.FindSubmatch([]byte(a.Val))
-						if len(matches) > 0 && len(matches[1]) > 0 {
-							if !versionMatch(string(matches[1]), version) {
-								downloadURL = a.Val
-								fmt.Printf("%s needs updating: %s\n", name, downloadURL)
-							} else {
-								fmt.Printf("%s is up to date (%s)\n", name, version)
-								downloadURL = ""
-							}
-							return
+						if fileName[len(fileName)-4:] == ".deb" {
+							downloadURL = *a.BrowserDownloadURL
 						}
-						break
+
+						if fileName[len(fileName)-8:] == ".deb.asc" {
+							sigURL = *a.BrowserDownloadURL
+						}
 					}
 				}
-			}
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				f(c)
+			} else {
+				fmt.Printf("%s is up to date (%s)\n", name, dpkgStatus.Version)
+				return nil
 			}
 		}
-		f(doc)
+	}
 
+	if downloadURL == "" {
+		downloadURL, err = utils.DownloadFromURL(url, selector, regexstring, dpkgStatus.Version, name, fixedDownloadURL)
+		if err != nil {
+			return err
+		}
 		if downloadURL == "" {
 			return nil
 		}
 	}
 
-	dir, err := ioutil.TempDir("", "jat")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(dir)
+	// TODO clearly this is the only bit that should be different for binary / dpkg / etc
 
 	fileName := filepath.Join(dir, name+".deb")
-	tmp, err := os.Create(fileName)
-	if err != nil {
-		return err
-	}
-	defer tmp.Close()
-
-	downloadResp, err := http.Get(downloadURL)
-	if err != nil {
-		return err
-	}
-	defer downloadResp.Body.Close()
-
-	_, err = io.Copy(tmp, downloadResp.Body)
+	err = utils.DownloadFile(downloadURL, fileName)
 	if err != nil {
 		return err
 	}
 
-	shell.Sudo("dpkg", "-i", fileName)
+	if sigURL != "" {
+		sigFile := filepath.Join(dir, name+".deb.asc")
+		err := utils.DownloadFile(sigURL, sigFile)
+		if err != nil {
+			return err
+		}
+
+		err = shell.Shell("gpg2", "--verify", sigFile, fileName)
+		if err != nil {
+			os.Remove(fileName)
+			return err
+		}
+	}
+
+	fmt.Printf("Downloaded new package: %s\n", fileName)
 
 	return nil
 }
 
-func versionMatch(remote, local string) bool {
-	dashIndex := strings.Index(local, "-")
-	if dashIndex >= 0 {
-		local = local[:dashIndex]
+type Version struct {
+	Version string
+	Status  string
+}
+
+func Query(packageName string) (*Version, error) {
+	dpkg := Version{}
+	exe := exec.Command("/usr/bin/dpkg-query", "--showformat={\"version\":\"${Version}\",\"status\":\"${Status}\"}", "--show", packageName)
+	out, err := exe.CombinedOutput()
+	if err != nil {
+		return &dpkg, err
 	}
 
-	r := strings.Split(remote, ".")
-	l := strings.Split(local, ".")
+	logrus.Infof("%s", out)
 
-	for i, v := range r {
-		if i >= len(l) {
-			break
-		}
-
-		if v != l[i] {
-			return false
-		}
+	if err := json.Unmarshal(out, &dpkg); err != nil {
+		return &dpkg, err
 	}
 
-	return true
+	return &dpkg, nil
 }

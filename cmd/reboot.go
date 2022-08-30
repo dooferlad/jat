@@ -35,7 +35,7 @@ var rebootCmd = &cobra.Command{
 	Use:   "reboot",
 	Short: "Update software and reboot",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := Upgrade(); err != nil {
+		if err := Upgrade([]string{}); err != nil {
 			return err
 		}
 

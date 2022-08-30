@@ -64,10 +64,6 @@ func unwrap(wrapped []byte, v interface{}) error {
 	return nil
 }
 
-type Hello struct {
-	Hello string `json:"hello"`
-}
-
 func List() (*map[string]Listing, error) {
 	out, err := shell.Capture("sudo", "zfs", "list", "-H")
 	if err != nil {
