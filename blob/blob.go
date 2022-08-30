@@ -112,8 +112,7 @@ type BinaryPackage struct {
 }
 
 type Config struct {
-	ManualPackages map[string]BinaryPackage `mapstructure:"manual_packages"`
-	BinaryBlobs    map[string]BinaryPackage `mapstructure:"binary_blobs"`
+	BinaryBlobs map[string]BinaryPackage `mapstructure:"binary_blobs"`
 }
 
 type Meta struct {
@@ -277,6 +276,10 @@ func checkVersionURL(m *Meta, info BinaryPackage) (string, string, error) {
 			return "", "", err
 		}
 		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			return "", "", fmt.Errorf("unable to check version of %s: %s", info.Name, resp.Status)
+		}
 
 		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {

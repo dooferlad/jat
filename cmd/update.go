@@ -18,17 +18,12 @@ import (
 	"fmt"
 
 	"github.com/dooferlad/jat/blob"
-	"github.com/dooferlad/jat/dpkg"
 	"github.com/dooferlad/jat/shell"
 	"github.com/spf13/cobra"
 )
 
 func Upgrade(args []string) error {
 	if err := blob.Update(args); err != nil {
-		return err
-	}
-
-	if err := dpkg.Update(args); err != nil {
 		return err
 	}
 

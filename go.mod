@@ -38,6 +38,7 @@ require (
 	github.com/xordataexchange/crypt v0.0.3-0.20170626215501-b2862e3d0a77 // indirect
 	go.etcd.io/bbolt v1.3.2 // indirect
 	golang.org/x/net v0.0.0-20211215060638-4ddde0e984e9
+	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 	golang.org/x/sys v0.0.0-20211214234402-4825e8c3871d // indirect
 	gopkg.in/resty.v1 v1.12.0 // indirect
 )
