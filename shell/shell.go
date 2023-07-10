@@ -1,12 +1,15 @@
 package shell
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // Run a command in the user's environment
 func Shell(cmd string, arg ...string) error {
+	fmt.Println(cmd, strings.Join(arg, " "))
 	exe := exec.Command(cmd, arg...)
 	exe.Env = os.Environ()
 	exe.Stderr = os.Stderr
