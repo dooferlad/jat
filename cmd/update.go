@@ -15,7 +15,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"os/exec"
 
 	"github.com/dooferlad/jat/blob"
 	"github.com/dooferlad/jat/shell"
@@ -31,11 +33,16 @@ func Upgrade(args []string) error {
 		return nil
 	}
 
-	if err := shell.Sudo("apt", "update"); err != nil {
+	if err := shell.Sudo("pkcon", "refresh"); err != nil {
 		return fmt.Errorf("updating packages: %s", err)
 	}
 
-	if err := shell.Sudo("apt", "upgrade", "-y", "--autoremove"); err != nil {
+	if err := shell.Sudo("pkcon", "update", "-y", "--autoremove", "--allow-downgrade"); err != nil {
+		var e *exec.ExitError
+		errors.As(err, &e)
+		if e.ExitCode() == 5 { // No updates
+			return nil
+		}
 		return fmt.Errorf("updating packages: %s", err)
 	}
 
