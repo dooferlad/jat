@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -93,6 +94,10 @@ func DownloadFile(downloadURL, fileName string) error {
 	defer downloadResp.Body.Close()
 
 	if downloadResp.StatusCode >= 400 {
+		var b bytes.Buffer
+
+		b.ReadFrom(downloadResp.Body)
+		println(b.String())
 		return fmt.Errorf("unable to download file from %s: %s", downloadURL, downloadResp.Status)
 	}
 
