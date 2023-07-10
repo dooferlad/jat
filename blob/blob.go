@@ -43,10 +43,8 @@ func Update(args []string) error {
 	for name, info := range config.BinaryBlobs {
 		if len(args) == 0 || utils.InList(name, args) {
 			wg.Add(1)
-			if err := checkAndUpdateBinary(name, info); err != nil {
-				return err
-			}
 
+			logrus.Info("Checking for new version of ", name)
 			go func(name string, info BinaryPackage) {
 				if err := checkAndUpdateBinary(name, info); err != nil {
 					logrus.Errorf("while downloading %s: %s", name, err)
@@ -63,7 +61,6 @@ func Update(args []string) error {
 
 // Install looks for a matching binary package and, if found, installs it
 func Install(packageName string) error {
-
 	var config Config
 	err := viper.Unmarshal(&config)
 	if err != nil {
@@ -310,47 +307,68 @@ func checkVersionURL(m *Meta, info BinaryPackage) (string, string, error) {
 		}
 		bits := strings.Split(info.GithubRepo, "/")
 
-		release, _, err := client.Repositories.GetLatestRelease(context.Background(), bits[0], bits[1])
+		releases, _, err := client.Repositories.ListReleases(context.Background(), bits[0], bits[1], nil)
 		if err != nil {
 			return "", "", err
 		}
 
-		if release.TagName != nil {
-			for _, a := range release.Assets {
-				if a.Name != nil {
-					fileName := *a.Name
+		for _, release := range releases {
+			if release.TagName != nil {
+				remoteVersion = strings.TrimLeft(*release.TagName, "v")
+				if strings.Contains(remoteVersion, "rc") || strings.Contains(remoteVersion, "beta") || strings.Contains(remoteVersion, "alpha") {
+					// Only download releases
+					continue
+				}
 
-					fileName = strings.ToLower(fileName)
-					fileName = strings.ReplaceAll(fileName, "-", "_")
-					fileName = strings.ReplaceAll(fileName, " ", "_")
+				fmt.Println(info.GithubRepo, remoteVersion, downloadURL)
+				if info.DownloadURL != "" {
+					// We have a version - job done
+					break
+				}
 
-					parts := strings.Split(fileName, ".")
-					extension := parts[len(parts)-1]
+				for _, a := range release.Assets {
+					if a.Name != nil {
+						fileName := *a.Name
 
-					if strings.HasPrefix(extension, "sha") || strings.HasPrefix(extension, "md5") {
-						continue
+						fileName = strings.ToLower(fileName)
+						fileName = strings.ReplaceAll(fileName, "-", "_")
+						fileName = strings.ReplaceAll(fileName, " ", "_")
+
+						parts := strings.Split(fileName, ".")
+						extension := parts[len(parts)-1]
+
+						// If there is a DownloadURL specified, we probably won't find a binary to download on the GitHub
+						// page. Just look for the presence of anything.
+						if info.DownloadURL == "" {
+							if strings.HasPrefix(extension, "sha") || strings.HasPrefix(extension, "md5") {
+								continue
+							}
+
+							if extension == "asc" {
+								continue
+							}
+
+							if (strings.Contains(fileName, "linux") || (strings.HasSuffix(fileName, ".deb") && info.PackageType == "deb")) &&
+								(strings.Contains(fileName, "amd64") || strings.Contains(fileName, "x86_64")) {
+								downloadURL = *a.BrowserDownloadURL
+								break
+							}
+						}
+
+						// if fileName[len(fileName)-4:] == ".deb" {
+						//
+						// }
+
+						// if fileName[len(fileName)-8:] == ".deb.asc" {
+						// 	sigURL = *a.BrowserDownloadURL
+						// }
 					}
-
-					if extension == "asc" {
-						continue
-					}
-
-					if strings.Contains(fileName, "linux") &&
-						(strings.Contains(fileName, "amd64") || strings.Contains(fileName, "x86_64")) {
-						downloadURL = *a.BrowserDownloadURL
-					}
-
-					//if fileName[len(fileName)-4:] == ".deb" {
-					//
-					//}
-
-					//if fileName[len(fileName)-8:] == ".deb.asc" {
-					//	sigURL = *a.BrowserDownloadURL
-					//}
 				}
 			}
 
-			remoteVersion = strings.TrimLeft(*release.TagName, "v")
+			if downloadURL != "" {
+				break
+			}
 		}
 	} else if downloadURL == "" {
 		var err error
