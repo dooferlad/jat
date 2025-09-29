@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/sirupsen/logrus"
+
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -51,6 +53,7 @@ func init() {
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.jat.yaml)")
+	rootCmd.PersistentFlags().Bool("verbose", false, "print debug messages")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -76,5 +79,10 @@ func initConfig() {
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
+	}
+	if v, err := rootCmd.PersistentFlags().GetBool("verbose"); err == nil && v {
+		logrus.SetLevel(logrus.DebugLevel)
+	} else {
+		logrus.Error(err)
 	}
 }
