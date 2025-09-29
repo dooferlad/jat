@@ -37,6 +37,10 @@ func Upgrade(args []string) error {
 		return fmt.Errorf("updating packages: %s", err)
 	}
 
+	if err := shell.Sudo("pkcon", "get-updates"); err != nil {
+		return nil
+	}
+
 	if err := shell.Sudo("pkcon", "update", "-y", "--autoremove", "--allow-downgrade"); err != nil {
 		var e *exec.ExitError
 		errors.As(err, &e)
