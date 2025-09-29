@@ -5,10 +5,16 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
-// Run a command in the user's environment
+var mutex sync.Mutex
+
+// Shell Run a command in the user's environment
 func Shell(cmd string, arg ...string) error {
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	fmt.Println(cmd, strings.Join(arg, " "))
 	exe := exec.Command(cmd, arg...)
 	exe.Env = os.Environ()
@@ -23,7 +29,7 @@ func Shell(cmd string, arg ...string) error {
 	return nil
 }
 
-// Run a shell command prefixed by sudo, return error
+// Sudo Run a shell command prefixed by sudo, return error
 func Sudo(cmd string, arg ...string) error {
 	c := []string{cmd}
 	c = append(c, arg...)
@@ -31,7 +37,7 @@ func Sudo(cmd string, arg ...string) error {
 	return Shell("sudo", c...)
 }
 
-// Run a command in the user's environment capturing the output
+// Capture Run a command in the user's environment capturing the output
 func Capture(cmd string, arg ...string) ([]byte, error) {
 	exe := exec.Command(cmd, arg...)
 	exe.Env = os.Environ()
