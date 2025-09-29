@@ -16,15 +16,11 @@ import (
 	"text/template"
 
 	"github.com/dooferlad/jat/dpkg"
-
-	"github.com/sirupsen/logrus"
-
-	"github.com/pkg/errors"
-
-	"github.com/dooferlad/jat/utils"
-
 	"github.com/dooferlad/jat/shell"
+	"github.com/dooferlad/jat/utils"
 	"github.com/google/shlex"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -44,7 +40,6 @@ func Update(args []string) error {
 		if len(args) == 0 || utils.InList(name, args) {
 			wg.Add(1)
 
-			logrus.Info("Checking for new version of ", name)
 			go func(name string, info BinaryPackage) {
 				if err := checkAndUpdateBinary(name, info); err != nil {
 					logrus.Errorf("while downloading %s: %s", name, err)
@@ -162,6 +157,8 @@ func checkAndUpdateBinary(name string, info BinaryPackage) error {
 	if !versionMatch(remoteVersion, version) {
 		fmt.Printf("%s needs updating: %s (local: %s, remote: %s)\n", info.Name, downloadURL, version, remoteVersion)
 		return installBlob(info, m, downloadURL)
+	} else {
+		fmt.Printf("%s is up to date (%s)\n", info.Name, version)
 	}
 
 	return nil
@@ -320,7 +317,7 @@ func checkVersionURL(m *Meta, info BinaryPackage) (string, string, error) {
 					continue
 				}
 
-				fmt.Println(info.GithubRepo, remoteVersion, downloadURL)
+				logrus.Debug(">>", info.GithubRepo, remoteVersion, downloadURL)
 				if info.DownloadURL != "" {
 					// We have a version - job done
 					break
@@ -336,32 +333,38 @@ func checkVersionURL(m *Meta, info BinaryPackage) (string, string, error) {
 
 						parts := strings.Split(fileName, ".")
 						extension := parts[len(parts)-1]
+						if len(parts) == 1 {
+							extension = ""
+						}
+
+						logrus.Debug(*a.Name)
 
 						// If there is a DownloadURL specified, we probably won't find a binary to download on the GitHub
 						// page. Just look for the presence of anything.
 						if info.DownloadURL == "" {
-							if strings.HasPrefix(extension, "sha") || strings.HasPrefix(extension, "md5") {
+							if extension == "deb" {
+								if info.PackageType == "deb" {
+									downloadURL = *a.BrowserDownloadURL
+									break
+								}
+								continue
+							} else {
+								if info.PackageType == "deb" {
+									continue
+								}
+							}
+
+							if !strings.Contains(fileName, "linux") {
 								continue
 							}
 
-							if extension == "asc" {
-								continue
-							}
-
-							if (strings.Contains(fileName, "linux") || (strings.HasSuffix(fileName, ".deb") && info.PackageType == "deb")) &&
-								(strings.Contains(fileName, "amd64") || strings.Contains(fileName, "x86_64")) {
-								downloadURL = *a.BrowserDownloadURL
-								break
+							if strings.Contains(fileName, "amd64") || strings.Contains(fileName, "x86_64") {
+								if extension == "gz" || extension == "zip" || extension == "bz" || extension == "" || extension == "xz" || extension == "bz2" {
+									downloadURL = *a.BrowserDownloadURL
+									break
+								}
 							}
 						}
-
-						// if fileName[len(fileName)-4:] == ".deb" {
-						//
-						// }
-
-						// if fileName[len(fileName)-8:] == ".deb.asc" {
-						// 	sigURL = *a.BrowserDownloadURL
-						// }
 					}
 				}
 			}
@@ -370,6 +373,8 @@ func checkVersionURL(m *Meta, info BinaryPackage) (string, string, error) {
 				break
 			}
 		}
+
+		logrus.Debug("From Github:", remoteVersion, downloadURL)
 	} else if downloadURL == "" {
 		var err error
 		remoteVersion, downloadURL, err = utils.VersionFromURL(info.URL, info.Selector, info.Regexp, info.Name, info.DownloadURL)
@@ -428,13 +433,21 @@ func installBlob(info BinaryPackage, m Meta, downloadURL string) error {
 	}
 
 	if len(info.InstallCommands) == 0 {
-		if strings.HasSuffix(downloadURL, "tar.gz") {
+		if strings.HasSuffix(downloadURL, ".tar.gz") ||
+			strings.HasSuffix(downloadURL, ".tar.bz") ||
+			strings.HasSuffix(downloadURL, ".tar.xz") ||
+			strings.HasSuffix(downloadURL, ".tar.bz2") {
 			info.InstallCommands = []string{
-				"tar -C {{ .HomeBinPath }} -xzf {{ .DownloadedFile }} {{ .Name }}",
+				"tar -C {{ .HomeBinPath }} -xf {{ .DownloadedFile }} {{ .Name }}",
 			}
-		} else if strings.HasSuffix(downloadURL, "zip") {
+		} else if strings.HasSuffix(downloadURL, ".zip") {
 			info.InstallCommands = []string{
 				"unzip -o -d {{ .HomeBinPath }} {{ .DownloadedFile }} {{ .Name }}",
+			}
+		} else if strings.HasSuffix(downloadURL, ".bz2") {
+			info.InstallCommands = []string{
+				"mv {{ .DownloadedFile }} {{ .HomeBinPath }}/{{ .Name }}.bz2",
+				"bunzip2 --force {{ .HomeBinPath }}/{{ .Name }}.bz2",
 			}
 		} else {
 			info.InstallCommands = []string{
@@ -475,6 +488,9 @@ func executeTemplate(commandTemplate string, m Meta) error {
 	}
 
 	fmt.Println(cmd)
+	if cmd[0] == "sudo" {
+		return shell.Sudo(cmd[1], cmd[2:]...)
+	}
 	return shell.Shell(cmd[0], cmd[1:]...)
 }
 
